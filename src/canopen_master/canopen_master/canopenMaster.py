@@ -43,14 +43,25 @@ class canopen_master(Node):
         # read controlword
         control_word = self.CoSlaveMotor.sdo.upload(0x6040, 0x00)
         control_word = int.from_bytes(control_word, 'little')
-        self.get_logger().info('Read controlWord %d' % control_word)
+        self.get_logger().info('Read controlWord 0x%X' % control_word)
         if request.enable == True:
+            if control_word & 0x01 != 0x01:
+                control_word = control_word | 0x01
+                # write controlWord
+                self.get_logger().info('Write controlWorld 0x%X' % control_word)
+                self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack(rosType2structType['uint16'], control_word))
+            if control_word & 0x03 != 0x03:
+                control_word = control_word | 0x03
+                # write controlWord
+                self.get_logger().info('Write controlWorld 0x%X' % control_word)
+                self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack(rosType2structType['uint16'], control_word))
+
             control_word = control_word | 0x08
         else:
             control_word = control_word & (~0x08)
         
         # write controlWord
-        self.get_logger().info('Write controlWorld %d' % control_word)
+        self.get_logger().info('Write controlWorld 0x%X' % control_word)
         self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack(rosType2structType['uint16'], control_word))
 
         respone.status = False
