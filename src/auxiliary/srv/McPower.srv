@@ -1,0 +1,8 @@
+uint8 axis
+bool enable
+---
+bool status
+bool busy
+bool active
+bool error
+uint64 errorid
