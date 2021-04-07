@@ -6,7 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
 from auxiliary.srv import McPower
-from auxiliary.action import McMoveAbsolute, McMoveRelative
+from auxiliary.action import McMoveAbsolute, McMoveRelative, McReset
 from time import sleep
 
 canopen_master_eds = '/home/zt/workspace/demo/src/canopen_master/eds/canopen_master.eds'
@@ -36,6 +36,7 @@ class canopen_master(Node):
         # create actions
         self.mcMoveabsolution_act = ActionServer(self, McMoveAbsolute, 'McMoveAbsolution', self.McMoveabsolution_cb)
         self.mcMoveRelative_act = ActionServer(self, McMoveRelative, 'McMoveRelative', self.McMoveRelative_cb)
+        self.mcReset_act = ActionServer(self, McReset, 'McReset', self.McReset_cb)
 
     def McPower_cb(self, request, respone):
         self.get_logger().info('Enter McPower_cb, axis %d, enable %d' % (request.axis, request.enable))
@@ -146,7 +147,39 @@ class canopen_master(Node):
 
         return result
 
+    def McReset_cb(self, goal):
+        self.get_logger().info('Enter McMoveAbsolution_cb, axis %d execute %d' % (
+            goal.request.axis, goal.request.execute
+        ))
 
+        feedback_msg = McReset.Feedback()
+        feedback_msg.done = False
+        feedback_msg.busy = True
+
+        self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack(rosType2structType['uint16'], 0x80))
+
+        # wait done
+        while True:
+            status = self.CoSlaveMotor.sdo.upload(0x6041, 0x00)
+            status = int.from_bytes(status, 'little')
+            self.get_logger().info('status 0x%X' % status)
+            if (status & 0x08) != 0x08:
+                feedback_msg.done = True
+                feedback_msg.busy = False
+                goal.publish_feedback(feedback_msg)
+                break
+            else:
+                sleep(0.1)
+            goal.publish_feedback(feedback_msg)
+        
+        # done
+        goal.succeed()
+
+        result = McReset.Result()
+        result.error = False
+        result.errorid = 0
+
+        return result
 
 def main(args=None):
     rclpy.init(args=args)

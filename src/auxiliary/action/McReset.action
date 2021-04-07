@@ -1,0 +1,8 @@
+uint8 axis
+bool execute
+---
+bool error
+int64 errorid
+---
+bool done
+bool busy
