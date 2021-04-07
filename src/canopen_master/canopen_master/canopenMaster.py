@@ -6,7 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
 from auxiliary.srv import McPower
-from auxiliary.action import McMoveAbsolute
+from auxiliary.action import McMoveAbsolute, McMoveRelative
 from time import sleep
 
 canopen_master_eds = '/home/zt/workspace/demo/src/canopen_master/eds/canopen_master.eds'
@@ -35,6 +35,7 @@ class canopen_master(Node):
 
         # create actions
         self.mcMoveabsolution_act = ActionServer(self, McMoveAbsolute, 'McMoveAbsolution', self.McMoveabsolution_cb)
+        self.mcMoveRelative_act = ActionServer(self, McMoveRelative, 'McMoveRelative', self.McMoveRelative_cb)
 
     def McPower_cb(self, request, respone):
         self.get_logger().info('Enter McPower_cb, axis %d, enable %d' % (request.axis, request.enable))
@@ -101,6 +102,51 @@ class canopen_master(Node):
         result.errorid = 0
 
         return result
+
+    def McMoveRelative_cb(self, goal):
+        self.get_logger().info('Enter McMoveAbsolution_cb, axis %d execute %d distance %f velocity %f acceleration %f deceleration %f' % (
+            goal.request.axis, goal.request.execute, goal.request.distance, goal.request.velocity, goal.request.acceleration, goal.request.deceleration
+        ))
+
+        feedback_msg = McMoveRelative.Feedback()
+        feedback_msg.done = False
+        feedback_msg.busy = True
+        feedback_msg.avtive = True
+        feedback_msg.commandaborted = False
+
+        self.CoSlaveMotor.sdo.download(0x6060, 0x00, struct.pack(rosType2structType['uint8'], 0x01))
+        self.CoSlaveMotor.sdo.download(0x607A, 0x00, struct.pack(rosType2structType['int32'], int(goal.request.distance)))
+        self.CoSlaveMotor.sdo.download(0x6081, 0x00, struct.pack(rosType2structType['int32'], int(goal.request.velocity)))
+        self.CoSlaveMotor.sdo.download(0x6083, 0x00, struct.pack(rosType2structType['uint16'], int(goal.request.acceleration)))
+        self.CoSlaveMotor.sdo.download(0x6084, 0x00, struct.pack(rosType2structType['uint16'], int(goal.request.deceleration)))
+
+        self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack(rosType2structType['uint16'], 0x5F))
+        self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack(rosType2structType['uint16'], 0x4F))
+
+        # wait done
+        while True:
+            status = self.CoSlaveMotor.sdo.upload(0x6041, 0x00)
+            status = int.from_bytes(status, 'little')
+            self.get_logger().info('status 0x%X' % status)
+            if (status & 0x400) == 0x400:
+                feedback_msg.done = True
+                feedback_msg.busy = False
+                goal.publish_feedback(feedback_msg)
+                break
+            else:
+                sleep(0.1)
+            goal.publish_feedback(feedback_msg)
+        
+        # done
+        goal.succeed()
+
+        result = McMoveRelative.Result()
+        result.error = False
+        result.errorid = 0
+
+        return result
+
+
 
 def main(args=None):
     rclpy.init(args=args)
