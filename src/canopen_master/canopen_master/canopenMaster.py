@@ -6,7 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
 from auxiliary.srv import McPower
-from auxiliary.action import McMoveAbsolute, McMoveRelative, McReset
+from auxiliary.action import McMoveAbsolute, McMoveRelative, McReset, McMoveVelocity
 from time import sleep
 
 canopen_master_eds = '/home/zt/workspace/demo/src/canopen_master/eds/canopen_master.eds'
@@ -37,6 +37,7 @@ class canopen_master(Node):
         self.mcMoveabsolution_act = ActionServer(self, McMoveAbsolute, 'McMoveAbsolution', self.McMoveabsolution_cb)
         self.mcMoveRelative_act = ActionServer(self, McMoveRelative, 'McMoveRelative', self.McMoveRelative_cb)
         self.mcReset_act = ActionServer(self, McReset, 'McReset', self.McReset_cb)
+        self.mcMoveVelocity_act = ActionServer(self, McMoveVelocity, 'McMoveVelocity', self.McMoveVelocity_cb)
 
     def McPower_cb(self, request, respone):
         self.get_logger().info('Enter McPower_cb, axis %d, enable %d' % (request.axis, request.enable))
@@ -191,6 +192,48 @@ class canopen_master(Node):
         result.errorid = 0
 
         return result
+
+    def McMoveVelocity_cb(self, goal):
+        self.get_logger().info('Enter McMoveAbsolution_cb, axis %d execute %d velocity %f velocity %f acceleration %f deceleration %f' % (
+            goal.request.axis, goal.request.execute, goal.request.velocity, goal.request.velocity, goal.request.acceleration, goal.request.deceleration
+        ))
+
+        feedback_msg = McMoveVelocity.Feedback()
+        feedback_msg.invelocity = False
+        feedback_msg.busy = True
+        feedback_msg.active = True
+        feedback_msg.commandaborted = False
+
+        self.CoSlaveMotor.sdo.download(0x6060, 0x00, struct.pack(rosType2structType['uint8'], 0x03)) # velocity mode
+        self.CoSlaveMotor.sdo.download(0x6081, 0x00, struct.pack(rosType2structType['int32'], int(goal.request.velocity)))
+        self.CoSlaveMotor.sdo.download(0x6083, 0x00, struct.pack(rosType2structType['uint16'], int(goal.request.acceleration)))
+        self.CoSlaveMotor.sdo.download(0x6084, 0x00, struct.pack(rosType2structType['uint16'], int(goal.request.deceleration)))
+
+        self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack(rosType2structType['uint16'], 0x0F))
+        
+        # wait done
+        while True:
+            status = self.CoSlaveMotor.sdo.upload(0x6041, 0x00)
+            status = int.from_bytes(status, 'little')
+            self.get_logger().info('status 0x%X' % status)
+            if (status & 0x400) == 0x400:
+                feedback_msg.invelocity = True
+                feedback_msg.busy = False
+                goal.publish_feedback(feedback_msg)
+                break
+            else:
+                sleep(0.1)
+            goal.publish_feedback(feedback_msg)
+        
+        # done
+        goal.succeed()
+
+        result = McMoveVelocity.Result()
+        result.error = False
+        result.errorid = 0
+
+        return result
+
 
 def main(args=None):
     rclpy.init(args=args)

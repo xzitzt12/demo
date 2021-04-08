@@ -1,0 +1,14 @@
+uint8 axis
+bool execute
+float64 velocity
+float64 acceleration 
+float64 deceleration
+uint8 direction # 0 undefine_direction 1 positive_direction 2 shortest_way 3 negative_direction
+---
+bool error
+int64 errorid
+---
+bool invelocity
+bool busy
+bool active
+bool commandaborted
