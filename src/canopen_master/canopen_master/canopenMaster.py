@@ -6,7 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
 from auxiliary.srv import McPower
-from auxiliary.action import McMoveAbsolute, McMoveRelative, McReset, McMoveVelocity
+from auxiliary.action import McMoveAbsolute, McMoveRelative, McReset, McMoveVelocity, McHalt
 from time import sleep
 
 canopen_master_eds = '/home/zt/workspace/demo/src/canopen_master/eds/canopen_master.eds'
@@ -38,6 +38,7 @@ class canopen_master(Node):
         self.mcMoveRelative_act = ActionServer(self, McMoveRelative, 'McMoveRelative', self.McMoveRelative_cb)
         self.mcReset_act = ActionServer(self, McReset, 'McReset', self.McReset_cb)
         self.mcMoveVelocity_act = ActionServer(self, McMoveVelocity, 'McMoveVelocity', self.McMoveVelocity_cb)
+        self.mcHalt_act = ActionServer(self, McHalt, 'McHalt', self.McHalt_cb)
 
     def McPower_cb(self, request, respone):
         self.get_logger().info('Enter McPower_cb, axis %d, enable %d' % (request.axis, request.enable))
@@ -229,6 +230,49 @@ class canopen_master(Node):
         goal.succeed()
 
         result = McMoveVelocity.Result()
+        result.error = False
+        result.errorid = 0
+
+        return result
+
+    def McHalt_cb(self, goal):
+        self.get_logger().info('Enter McHalt_cb, axis %d execute %d deceleration %f' % (
+            goal.request.axis, goal.request.execute, goal.request.deceleration
+        ))
+
+        # check mode
+        mode = self.CoSlaveMotor.sdo.upload(0x6061, 0x00)
+        mode = int.from_bytes(mode, 'little')
+        if mode != 3:
+            return
+
+        self.get_logger().info('velocity mode')
+        feedback_msg = McHalt.Feedback()
+        feedback_msg.done = False
+        feedback_msg.busy = True
+        feedback_msg.active = True
+        feedback_msg.commandaborted = False
+
+        self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack(rosType2structType['uint16'], 0x010F))
+
+        # wait done
+        while True:
+            status = self.CoSlaveMotor.sdo.upload(0x6041, 0x00)
+            status = int.from_bytes(status, 'little')
+            self.get_logger().info('status 0x%X' % status)
+            if (status & 0x100) == 0x100:
+                feedback_msg.done = True
+                feedback_msg.busy = False
+                goal.publish_feedback(feedback_msg)
+                break
+            else:
+                sleep(0.1)
+            goal.publish_feedback(feedback_msg)
+
+        # done
+        goal.succeed()
+
+        result = McHalt.Result()
         result.error = False
         result.errorid = 0
 

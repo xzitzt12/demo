@@ -1,0 +1,11 @@
+uint8 axis
+bool execute
+float64 deceleration
+---
+bool error
+int64 errorid
+---
+bool done
+bool busy
+bool active
+bool commandaborted

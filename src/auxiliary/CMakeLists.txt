@@ -27,6 +27,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/McMoveRelative.action"
   "action/McReset.action"
   "action/McMoveVelocity.action"
+  "action/McHalt.action"
 )
 
 if(BUILD_TESTING)
