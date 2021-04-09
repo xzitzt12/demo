@@ -28,6 +28,11 @@ class canopen_master(Node):
 
         self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack('H', 0x01)) # init param
         self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack('H', 0x03)) # init driver
+        self.CoSlaveMotor.sdo.download(0x6060, 0x00, struct.pack(rosType2structType['uint8'], 0x01)) # position mode
+        self.CoSlaveMotor.sdo.download(0x607A, 0x00, struct.pack(rosType2structType['int32'], 0x00)) 
+        self.CoSlaveMotor.sdo.download(0x6081, 0x00, struct.pack(rosType2structType['int32'], 0x00))
+        self.CoSlaveMotor.sdo.download(0x6083, 0x00, struct.pack(rosType2structType['uint16'], 0x00))
+        self.CoSlaveMotor.sdo.download(0x6084, 0x00, struct.pack(rosType2structType['uint16'], 0x00))
         self.CoSlaveMotor.sdo.download(0x6040, 0x00, struct.pack('H', 0x0F)) # power up
 
         # create service
