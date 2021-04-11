@@ -6,7 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
 from auxiliary.srv import McPower
-from auxiliary.action import McMoveAbsolute, McMoveRelative, McReset, McMoveVelocity, McHalt
+from auxiliary.action import McMoveAbsolute, McMoveRelative, McReset, McMoveVelocity, McHalt, McSetPosition
 from time import sleep
 
 canopen_master_eds = '/home/zt/workspace/demo/src/canopen_master/eds/canopen_master.eds'
@@ -15,9 +15,18 @@ rosType2structType = {'uint16': 'H',
                 'uint8': 'B',
                 'int32': 'i'}
 
+class axis():
+    position_offset = 0
+    scale = 1
+
 class canopen_master(Node):
     def __init__(self):
         super().__init__(node_name='canopenMaster')
+
+        self._axis = axis()
+
+        self._axis.position_offset = 0
+        self._axis.scale = 360/4000
         
         # init canopen stack
         self.CoNetwork = canopen.Network()
@@ -44,6 +53,13 @@ class canopen_master(Node):
         self.mcReset_act = ActionServer(self, McReset, 'McReset', self.McReset_cb)
         self.mcMoveVelocity_act = ActionServer(self, McMoveVelocity, 'McMoveVelocity', self.McMoveVelocity_cb)
         self.mcHalt_act = ActionServer(self, McHalt, 'McHalt', self.McHalt_cb)
+        self.mcSetPosition_act = ActionServer(self, McSetPosition, 'McSetPosition', self.McSetPosition_cb)
+
+    def Position_Usr2Phy(self, usr_pos):
+        return usr_pos / self._axis.scale
+    
+    def Position_Phy2Usr(self, phy_pos):
+        return phy_pos * self._axis.scale
 
     def McPower_cb(self, request, respone):
         self.get_logger().info('Enter McPower_cb, axis %d, enable %d' % (request.axis, request.enable))
@@ -90,8 +106,10 @@ class canopen_master(Node):
         feedback_msg.avtive = True
         feedback_msg.commandaborted = False
 
+        position = self.Position_Usr2Phy(int(goal.request.position)) - self._axis.position_offset
+
         self.CoSlaveMotor.sdo.download(0x6060, 0x00, struct.pack(rosType2structType['uint8'], 0x01))
-        self.CoSlaveMotor.sdo.download(0x607A, 0x00, struct.pack(rosType2structType['int32'], int(goal.request.position)))
+        self.CoSlaveMotor.sdo.download(0x607A, 0x00, struct.pack(rosType2structType['int32'], int(position)))
         self.CoSlaveMotor.sdo.download(0x6081, 0x00, struct.pack(rosType2structType['int32'], int(goal.request.velocity)))
         self.CoSlaveMotor.sdo.download(0x6083, 0x00, struct.pack(rosType2structType['uint16'], int(goal.request.acceleration)))
         self.CoSlaveMotor.sdo.download(0x6084, 0x00, struct.pack(rosType2structType['uint16'], int(goal.request.deceleration)))
@@ -283,6 +301,47 @@ class canopen_master(Node):
 
         return result
 
+    def McSetPosition_cb(self, goal):
+        self.get_logger().info('Enter McSetPosition_cb, axis %d execute %d position %f mode %d' % (
+            goal.request.axis, goal.request.execute, goal.request.position, goal.request.mode
+        ))
+
+        feedback_msg = McSetPosition.Feedback()
+        feedback_msg.done = False
+        feedback_msg.busy = True
+
+        goal.publish_feedback(feedback_msg)
+
+        result = McSetPosition.Result()
+
+        if goal.request.execute != True:
+            feedback_msg.done = False
+            feedback_msg.busy = False
+            goal.publish_feedback(feedback_msg)
+            result.error = False
+            result.errorid = 0
+            goal.succeed()
+            return result
+        
+        actual_position = self.CoSlaveMotor.sdo.upload(0x6064, 0x00)
+        actual_position = int.from_bytes(actual_position, 'little')
+
+        if goal.request.mode == True: # changed relative
+            self._axis.position_offset = actual_position + self.Position_Usr2Phy(goal.request.position)
+        else:
+            self._axis.position_offset = self.Position_Usr2Phy(goal.request.position) - actual_position
+        self.get_logger().info('position_offset %d' % self._axis.position_offset)
+        
+        feedback_msg.done = True
+        feedback_msg.busy = False
+        goal.publish_feedback(feedback_msg)
+
+        goal.succeed()
+
+        result.error = False
+        result.errorid = 0
+        return result
+        
 
 def main(args=None):
     rclpy.init(args=args)
